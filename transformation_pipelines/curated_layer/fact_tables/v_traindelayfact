@@ -1,0 +1,127 @@
+WITH filtered_plannedtime AS (
+  SELECT
+    EVA_Number,
+    EventId,
+    TrainName,
+    TrainType,
+    to_timestamp(CAST(Arrival_PlannedTime AS STRING), 'yyMMddHHmm') AS Arrival_PlannedTime,
+    to_timestamp(CAST(Departure_PlannedTime AS STRING), 'yyMMddHHmm') AS Departure_PlannedTime,
+    Arrival_PlannedPlatform,
+    Departure_PlannedPlatform,
+    Arrival_IsReplaced,
+    Departure_IsReplaced,
+    Arrival_ReplacementType,
+    Departure_ReplacementType
+  FROM
+    `bahn-data-ingestion`.s3_data.fact_plannedtimetable
+),
+-- Added events that should be treated as "planned" baseline
+added_events AS (
+  SELECT
+    CAST(eva_number AS STRING) AS EVA_Number,
+    EventId,
+    TrainName,
+    NULL AS TrainType, -- Not available for added events
+    EventType,
+    to_timestamp(CAST(ChangedTime AS STRING), 'yyMMddHHmm') AS PlannedTime,
+    ChangedPlatform AS PlannedPlatform,
+    NULL AS IsReplaced,
+    NULL AS ReplacementType
+  FROM
+    `bahn-data-ingestion`.s3_data.fact_changedtimetable
+  WHERE
+    IsUnplannedEvent = True
+    AND IsActive = True
+    AND EventType <> 'Stop'
+),
+-- Unpivot Planned Data to Event Grain (fixes the on-time data loss bug)
+unpivoted_planned AS (
+  SELECT
+    EVA_Number,
+    EventId,
+    TrainName,
+    TrainType,
+    'Arrival' AS EventType,
+    Arrival_PlannedTime AS PlannedTime,
+    Arrival_PlannedPlatform AS PlannedPlatform,
+    Arrival_IsReplaced AS IsReplaced,
+    Arrival_ReplacementType AS ReplacementType
+  FROM
+    filtered_plannedtime
+  WHERE
+    Arrival_PlannedTime IS NOT NULL
+  UNION ALL
+  SELECT
+    EVA_Number,
+    EventId,
+    TrainName,
+    TrainType,
+    'Departure' AS EventType,
+    Departure_PlannedTime AS PlannedTime,
+    Departure_PlannedPlatform AS PlannedPlatform,
+    Departure_IsReplaced AS IsReplaced,
+    Departure_ReplacementType AS ReplacementType
+  FROM
+    filtered_plannedtime
+  WHERE
+    Departure_PlannedTime IS NOT NULL
+  UNION ALL
+  -- Add events with EventStatus = 'a' as "planned" baseline
+  SELECT
+    EVA_Number,
+    EventId,
+    TrainName,
+    TrainType,
+    EventType,
+    PlannedTime,
+    PlannedPlatform,
+    IsReplaced,
+    ReplacementType
+  FROM
+    added_events
+),
+filtered_changedtime AS (
+  SELECT
+    EventId,
+    EventType,
+    EventStatus,
+    eva_number,
+    TrainName,
+    CancellationTime,
+    ChangedPlatform,
+    SnapshotTimestamp,
+    to_timestamp(CAST(ChangedTime AS STRING), 'yyMMddHHmm') AS ChangedTime
+  FROM
+    `bahn-data-ingestion`.s3_data.fact_changedtimetable
+  WHERE
+    IsActive = True
+    AND EventType <> 'Stop'
+    and IsUnplannedEvent = False
+)
+SELECT
+  pt.EVA_Number,
+  pt.EventId,
+  pt.TrainName,
+  pt.TrainType,
+  pt.EventType, -- Driven by Planned data, so it is never NULL
+  ct.CancellationTime,
+  COALESCE(ct.ChangedPlatform, pt.PlannedPlatform) AS ActualPlatform,
+  COALESCE(ct.ChangedTime, pt.PlannedTime) AS ActualTime,
+  pt.PlannedTime,
+  pt.PlannedPlatform,
+  pt.IsReplaced,
+  pt.ReplacementType,
+  -- Calculates delay in clean minutes instead of interval data type
+  CASE
+    WHEN ct.ChangedTime IS NOT NULL then timestampdiff(MINUTE, pt.PlannedTime, ct.ChangedTime)
+    ELSE 0
+  END AS DelayMinutes,
+  CASE
+    WHEN ct.EventStatus = 'c' THEN True
+    ELSE False
+  END AS IsCancelled
+FROM
+  unpivoted_planned pt
+    LEFT JOIN filtered_changedtime ct
+      ON pt.EventId = ct.EventId
+      AND pt.EventType = ct.EventType
