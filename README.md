@@ -29,3 +29,10 @@ Comparison of punctuality across different train categories.
 Evaluation of punctuality performance across individual stations.
 
 <img width="2364" height="1362" alt="On-Time Performance by Station Dashboard" src="https://github.com/user-attachments/assets/c627335a-b8ee-4d03-89c6-363c91db35d1" />
+
+## Documentation
+
+<img src="docs/README_preview.png" alt="Documentation Preview">
+<img width="1374" height="1578" alt="image" src="https://github.com/user-attachments/assets/46558873-3739-41c0-9bd4-95dd6594b880" />
+
+[View the full documentation PDF](README.pdf)
