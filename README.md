@@ -32,7 +32,8 @@ Evaluation of punctuality performance across individual stations.
 
 ## Documentation
 
-<img src="docs/README_preview.png" alt="Documentation Preview">
-<img width="1374" height="1578" alt="image" src="https://github.com/user-attachments/assets/46558873-3739-41c0-9bd4-95dd6594b880" />
+Preview of the project documentation:
+
+<img width="1374" height="1578" alt="Documentation Preview" src="https://github.com/user-attachments/assets/46558873-3739-41c0-9bd4-95dd6594b880" />
 
 [View the full documentation PDF](README.pdf)
